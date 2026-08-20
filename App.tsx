@@ -11,6 +11,7 @@ import SignInScreen from "./src/screens/SignInScreen";
 import BrainDumpScreen from "./src/screens/BrainDumpScreen";
 import GoalsScreen from "./src/screens/GoalsScreen";
 import FocusScreen from "./src/screens/FocusScreen";
+import ProgressScreen from "./src/screens/ProgressScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -78,6 +79,7 @@ export default function App() {
             {/* Focus first: "what should I do now" is the question the app
                 exists to answer. Goals and Brain Dump are the supporting acts. */}
             <Tab.Screen name="Focus" component={FocusScreen} />
+            <Tab.Screen name="Progress" component={ProgressScreen} />
             <Tab.Screen name="Goals" component={GoalsScreen} />
             <Tab.Screen name="Brain Dump" component={BrainDumpScreen} />
           </Tab.Navigator>

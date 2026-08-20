@@ -66,14 +66,16 @@ Scan the QR code with Expo Go on your phone, or press `w` for web.
 
 | Path | What it is |
 |---|---|
-| `App.tsx` | Auth gate + bottom-tab navigation (Goals / Brain Dump) |
+| `App.tsx` | Auth gate + bottom-tab navigation (Focus / Progress / Goals / Brain Dump) |
 | `src/screens/SignInScreen.tsx` | Email/password sign-in and sign-up |
 | `src/screens/BrainDumpScreen.tsx` | Capture → extract → review → confirmed save |
 | `src/screens/GoalsScreen.tsx` | Goal/task list with complete, edit, and soft-delete |
-| `src/screens/FocusScreen.tsx` | Ranked "Today's Focus" + snapshot saving |
+| `src/screens/FocusScreen.tsx` | "What should I do now" — live ranked task list |
+| `src/screens/ProgressScreen.tsx` | "How am I doing" — life-area bins, per-goal drift, 7-day momentum |
 | `src/lib/supabase.ts` | Supabase client, configured from `.env` |
 | `src/lib/events.ts` | `logEvent()` — the one way user actions reach `events` |
-| `src/lib/priority.ts` | Rule-based ranking. Pure functions, no I/O |
+| `src/lib/priority.ts` | Rule-based ranking for Focus. Pure functions, no I/O |
+| `src/lib/drift.ts` | Shared "days since touched" math for Focus and Progress |
 | `tests/priority.verify.mts` | Ranking checks — `npm run verify:priority` |
 | `supabase/schema.sql` | Full DB schema, RLS policies, and the append-only triggers |
 | `supabase/functions/extract-goals/` | Deno Edge Function that calls Claude |
@@ -115,13 +117,15 @@ stripping or best-effort parsing in the path.
 
 1. ~~Auth screens (sign up / sign in)~~ — done
 2. ~~Basic goal/task list view + manual CRUD (edit/complete/delete what got extracted)~~ — done
-3. Priority engine — **rule-based pass done** (`src/lib/priority.ts`, written to
-   `priority_snapshots` with visible reasoning). **AI reasoning layer still to do** — it should
-   adjust and explain on top of the rules, never replace them, so the app keeps working when
-   the API is slow or down.
-4. ~~Daily focus screen~~ — done, with one deliberate deviation: it computes the ranking fresh
-   on each visit and lets you *save* a snapshot, rather than reading back the last one.
-   Showing a stale ranking as if it were current would be worse than recomputing.
-5. Drift detection — nightly job scanning `events` for goals untouched >N days → push notification
+3. Priority engine — **rule-based pass done** (`src/lib/priority.ts`). **AI reasoning layer
+   still to do** — it should adjust and explain on top of the rules, never replace them, so the
+   app keeps working when the API is slow or down.
+4. ~~Daily focus screen~~ — done (`FocusScreen.tsx`). Fully live: recomputed on every visit
+   from `goals`/`tasks`/`events`, no manual save step.
+5. ~~Drift detection~~ — done, as an **in-app automatic view** rather than a scheduled job or
+   push notification (`ProgressScreen.tsx`). Goals are grouped into life-area bins, each goal
+   shows days since its last event and a fresh/quiet/stale badge (`src/lib/drift.ts`), and a
+   7-day completion count gives a momentum signal. No infrastructure beyond what already
+   exists — reopens the push-notification path later if that turns out to matter.
 6. Chat/decision-support — retrieval-grounded, using `context_summaries` + filtered goals/tasks
 7. Context summary generation job (the tiered summarization from our earlier discussion)

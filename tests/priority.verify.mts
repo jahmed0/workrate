@@ -1,5 +1,5 @@
 ﻿// Temporary verification of the ranking rules. Run: node verify-priority.mts
-import { rankTasks, summariseRanking } from "../src/lib/priority.ts";
+import { rankTasks } from "../src/lib/priority.ts";
 
 const NOW = new Date(2026, 7, 19); // 2026-08-19, matching today
 const iso = (y: number, m: number, d: number) => new Date(y, m - 1, d).toISOString();
@@ -72,8 +72,6 @@ console.log("\n--- ranking ---");
 for (const [i, r] of ranked.entries()) {
   console.log(`${i + 1}. ${r.title.padEnd(24)} ${r.score.toFixed(3)}  ${r.reasons.join(", ")}`);
 }
-console.log("\n--- snapshot reasoning ---");
-console.log(summariseRanking(ranked));
 
 process.exitCode = failures === 0 ? 0 : 1;
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : failures + " CHECK(S) FAILED"}`);

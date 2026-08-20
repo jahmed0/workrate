@@ -3,13 +3,15 @@
  * and survives any front-end redesign untouched.
  *
  * Deliberately transparent rather than clever: every score comes with the
- * reasons that produced it, because `priority_snapshots.reasoning` is meant to
- * be shown to the user. A ranking you can't interrogate is one you won't trust.
+ * reasons that produced it, and FocusScreen shows them inline. A ranking you
+ * cannot interrogate is one you will not trust.
  *
  * The AI reasoning layer (build step 3, second half) goes ON TOP of this — it
  * should adjust and explain, not replace. Keeping the rules as the floor means
  * the app still works when the API is down or slow.
  */
+
+import { daysBetween } from "./drift.ts";
 
 export type ScoredTask = {
   taskId: string;
@@ -46,11 +48,6 @@ const DRIFT_SATURATION_DAYS = 30;
 // Lowest urgency a task with a real deadline can reach. Must stay above the
 // undated value in dueComponent() so an explicit date always outranks none.
 const DUE_FLOOR = 0.32;
-
-function daysBetween(from: Date, to: Date): number {
-  const MS_PER_DAY = 86_400_000;
-  return Math.floor((to.getTime() - from.getTime()) / MS_PER_DAY);
-}
 
 /** Parse a YYYY-MM-DD date column as local midnight, not UTC. */
 function parseDateOnly(value: string): Date {
@@ -159,18 +156,4 @@ export function rankTasks(params: {
       };
     })
     .sort((a, b) => b.score - a.score);
-}
-
-/** One-paragraph summary for `priority_snapshots.reasoning`. */
-export function summariseRanking(ranked: ScoredTask[]): string {
-  if (ranked.length === 0) return "No open tasks to rank.";
-  const top = ranked.slice(0, 3);
-  const lines = top.map(
-    (t, i) => `${i + 1}. ${t.title} (${t.score.toFixed(2)}) — ${t.reasons.join(", ")}`,
-  );
-  return [
-    `Rule-based ranking of ${ranked.length} open task(s).`,
-    `Weights: due ${W_DUE}, horizon ${W_HORIZON}, drift ${W_DRIFT}.`,
-    ...lines,
-  ].join("\n");
 }

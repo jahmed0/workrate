@@ -1,25 +1,19 @@
 import React, { useCallback, useState } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  RefreshControl,
-} from "react-native";
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../lib/supabase";
-import { rankTasks, summariseRanking, type ScoredTask } from "../lib/priority";
+import { rankTasks, type ScoredTask } from "../lib/priority";
 
+// Purely a live view — no persistence. Ranking is recomputed on every visit
+// from goals/tasks/events, same pattern GoalsScreen uses. There is
+// deliberately nothing to save here: a snapshot nobody reads back is just
+// unused writes. If a history view is ever built, it reads `events`
+// directly rather than a separately-maintained snapshot table.
 export default function FocusScreen() {
   const [ranked, setRanked] = useState<ScoredTask[]>([]);
-  const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -29,11 +23,8 @@ export default function FocusScreen() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
 
-      const [g, t, e, snap] = await Promise.all([
-        supabase
-          .from("goals")
-          .select("id,title,horizon,status")
-          .is("deleted_at", null),
+      const [g, t, e] = await Promise.all([
+        supabase.from("goals").select("id,title,horizon,status").is("deleted_at", null),
         supabase
           .from("tasks")
           .select("id,title,goal_id,status,due_date,created_at")
@@ -45,16 +36,10 @@ export default function FocusScreen() {
           .select("entity_type,entity_id,created_at")
           .order("created_at", { ascending: false })
           .limit(1000),
-        supabase
-          .from("priority_snapshots")
-          .select("generated_at")
-          .order("generated_at", { ascending: false })
-          .limit(1),
       ]);
       if (g.error) throw g.error;
       if (t.error) throw t.error;
       if (e.error) throw e.error;
-      if (snap.error) throw snap.error;
 
       const tasks = t.data ?? [];
       const goalIdByTask = new Map(tasks.map((x) => [x.id, x.goal_id]));
@@ -74,10 +59,7 @@ export default function FocusScreen() {
         if (!lastTouchedByGoal[goalId]) lastTouchedByGoal[goalId] = ev.created_at;
       }
 
-      setRanked(
-        rankTasks({ tasks, goals: g.data ?? [], lastTouchedByGoal }),
-      );
-      setLastSnapshot(snap.data?.[0]?.generated_at ?? null);
+      setRanked(rankTasks({ tasks, goals: g.data ?? [], lastTouchedByGoal }));
     } catch (err: any) {
       setError(err.message ?? "Failed to load");
     } finally {
@@ -91,53 +73,6 @@ export default function FocusScreen() {
       load();
     }, [load]),
   );
-
-  const saveSnapshot = async () => {
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      if (ranked.length === 0) throw new Error("Nothing to snapshot.");
-
-      // Read the user here rather than trusting component state — if the
-      // session refreshed (or a load failed) since mount, `userId` can be
-      // stale or null, and a silent early return looks like a dead button.
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
-      if (!user) throw new Error("Session expired — sign out and back in.");
-
-      const { error: snapErr } = await supabase.from("priority_snapshots").insert({
-        user_id: user.id,
-        ranked_task_ids: ranked.map((r) => r.taskId),
-        reasoning: summariseRanking(ranked),
-      });
-      if (snapErr) throw snapErr;
-
-      // tasks.priority_score is the cheap denormalised copy, per the schema
-      // comment — the snapshot above is the durable versioned record. Issued
-      // concurrently so this doesn't become N serial round trips.
-      const updates = await Promise.all(
-        ranked.map((item) =>
-          supabase
-            .from("tasks")
-            .update({ priority_score: item.score })
-            .eq("id", item.taskId),
-        ),
-      );
-      const failed = updates.find((u) => u.error);
-      if (failed?.error) throw failed.error;
-
-      setNotice(`Snapshot saved — ${ranked.length} task(s) ranked.`);
-      await load();
-    } catch (err: any) {
-      setError(err.message ?? "Could not save snapshot");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -170,17 +105,10 @@ export default function FocusScreen() {
       {error && (
         <View style={styles.errorBox}>
           <Text style={styles.error}>{error}</Text>
-          <Pressable onPress={load} hitSlop={6}>
-            <Text style={styles.retry}>Retry</Text>
-          </Pressable>
         </View>
       )}
-      {notice && <Text style={styles.notice}>{notice}</Text>}
 
       {ranked.length === 0 ? (
-        // Only claim there's nothing here when the load actually succeeded.
-        // On failure this would otherwise read as "you have no tasks", which
-        // is a different and much more alarming statement than "load failed".
         !error && (
           <Text style={styles.empty}>
             No open tasks to rank. Add some in Brain Dump, or reopen something you've
@@ -188,33 +116,16 @@ export default function FocusScreen() {
           </Text>
         )
       ) : (
-        <>
-          {ranked.map((item, i) => (
-            <View key={item.taskId} style={styles.row}>
-              <Text style={styles.rank}>{i + 1}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.reasons}>{item.reasons.join(" · ")}</Text>
-              </View>
-              <Text style={styles.score}>{item.score.toFixed(2)}</Text>
+        ranked.map((item, i) => (
+          <View key={item.taskId} style={styles.row}>
+            <Text style={styles.rank}>{i + 1}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>{item.title}</Text>
+              <Text style={styles.reasons}>{item.reasons.join(" · ")}</Text>
             </View>
-          ))}
-
-          <Pressable
-            style={[styles.button, saving && styles.buttonDisabled]}
-            onPress={saveSnapshot}
-            disabled={saving}
-          >
-            <Text style={styles.buttonText}>
-              {saving ? "Saving..." : "Save this ranking as a snapshot"}
-            </Text>
-          </Pressable>
-          <Text style={styles.meta}>
-            {lastSnapshot
-              ? `Last snapshot: ${new Date(lastSnapshot).toLocaleString()}`
-              : "No snapshot saved yet."}
-          </Text>
-        </>
+            <Text style={styles.score}>{item.score.toFixed(2)}</Text>
+          </View>
+        ))
       )}
     </ScrollView>
   );
@@ -227,17 +138,7 @@ const styles = StyleSheet.create({
   subtext: { color: "#666", marginTop: 6, marginBottom: 18, lineHeight: 19 },
   empty: { color: "#888", lineHeight: 21 },
   error: { color: "#c0392b", flex: 1 },
-  errorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: "#fdf2f2",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  retry: { color: "#3060d0", fontWeight: "700", fontSize: 13 },
-  notice: { color: "#2c6e49", marginBottom: 12 },
+  errorBox: { backgroundColor: "#fdf2f2", borderRadius: 8, padding: 12, marginBottom: 12 },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -250,14 +151,4 @@ const styles = StyleSheet.create({
   title: { fontSize: 15, fontWeight: "600" },
   reasons: { fontSize: 12, color: "#888", marginTop: 3, lineHeight: 17 },
   score: { fontSize: 13, color: "#aaa", fontVariant: ["tabular-nums"] },
-  button: {
-    backgroundColor: "#3060d0",
-    borderRadius: 8,
-    paddingVertical: 13,
-    alignItems: "center",
-    marginTop: 22,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  meta: { fontSize: 12, color: "#999", marginTop: 10, textAlign: "center" },
 });

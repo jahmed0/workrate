@@ -1,7 +1,12 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // priority.ts imports drift.ts with an explicit extension — Node's
+    // native TS runner (tests/priority.verify.mts) requires that, but tsc
+    // otherwise rejects it. Safe with noEmit: true, since Metro (not tsc)
+    // does the actual bundling.
+    "allowImportingTsExtensions": true
   },
   "exclude": [
     "node_modules",
