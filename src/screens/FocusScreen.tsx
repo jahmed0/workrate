@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl }
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../lib/supabase";
 import { rankTasks, type ScoredTask } from "../lib/priority";
+import QuickCapture from "../components/QuickCapture";
 
 // Purely a live view — no persistence. Ranking is recomputed on every visit
 // from goals/tasks/events, same pattern GoalsScreen uses. There is
@@ -102,6 +103,8 @@ export default function FocusScreen() {
         shows its reasoning — argue with it.
       </Text>
 
+      <QuickCapture onSaved={load} />
+
       {error && (
         <View style={styles.errorBox}>
           <Text style={styles.error}>{error}</Text>
@@ -111,7 +114,7 @@ export default function FocusScreen() {
       {ranked.length === 0 ? (
         !error && (
           <Text style={styles.empty}>
-            No open tasks to rank. Add some in Brain Dump, or reopen something you've
+            No open tasks to rank. Add one above, or reopen something you've
             ticked off.
           </Text>
         )

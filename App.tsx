@@ -8,7 +8,6 @@ import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "./src/lib/supabase";
 import SignInScreen from "./src/screens/SignInScreen";
-import BrainDumpScreen from "./src/screens/BrainDumpScreen";
 import GoalsScreen from "./src/screens/GoalsScreen";
 import FocusScreen from "./src/screens/FocusScreen";
 import ProgressScreen from "./src/screens/ProgressScreen";
@@ -81,7 +80,6 @@ export default function App() {
             <Tab.Screen name="Focus" component={FocusScreen} />
             <Tab.Screen name="Progress" component={ProgressScreen} />
             <Tab.Screen name="Goals" component={GoalsScreen} />
-            <Tab.Screen name="Brain Dump" component={BrainDumpScreen} />
           </Tab.Navigator>
         </NavigationContainer>
       </SafeAreaView>

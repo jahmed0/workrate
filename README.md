@@ -66,11 +66,11 @@ Scan the QR code with Expo Go on your phone, or press `w` for web.
 
 | Path | What it is |
 |---|---|
-| `App.tsx` | Auth gate + bottom-tab navigation (Focus / Progress / Goals / Brain Dump) |
+| `App.tsx` | Auth gate + bottom-tab navigation (Focus / Progress / Goals) |
 | `src/screens/SignInScreen.tsx` | Email/password sign-in and sign-up |
-| `src/screens/BrainDumpScreen.tsx` | Capture → extract → review → confirmed save |
 | `src/screens/GoalsScreen.tsx` | Goal/task list with complete, edit, and soft-delete |
-| `src/screens/FocusScreen.tsx` | "What should I do now" — live ranked task list |
+| `src/screens/FocusScreen.tsx` | Landing screen: capture (via `QuickCapture`) + the live ranked task list |
+| `src/components/QuickCapture.tsx` | Capture → extract → review → confirmed save, embedded inline |
 | `src/screens/ProgressScreen.tsx` | "How am I doing" — life-area bins, per-goal drift, 7-day momentum |
 | `src/lib/supabase.ts` | Supabase client, configured from `.env` |
 | `src/lib/events.ts` | `logEvent()` — the one way user actions reach `events` |

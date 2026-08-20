@@ -1,15 +1,14 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Button,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  Switch,
-} from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Switch } from "react-native";
 import { supabase } from "../lib/supabase";
+import { logEvent } from "../lib/events";
+
+/**
+ * Capture + extract + review, embedded inline at the top of Focus rather than
+ * its own screen. Compact at rest — a single-line-height input — so it never
+ * pushes the ranked list (the thing you actually opened the app to see) below
+ * the fold. Expands in place once there's something to review.
+ */
 
 type ProposedGoal = {
   temp_id: string;
@@ -25,9 +24,9 @@ type ProposedTask = {
   due_date: string | null;
 };
 
-export default function BrainDumpScreen() {
+export default function QuickCapture({ onSaved }: { onSaved: () => void }) {
   const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [goals, setGoals] = useState<ProposedGoal[]>([]);
   const [tasks, setTasks] = useState<ProposedTask[]>([]);
   const [selectedGoals, setSelectedGoals] = useState<Record<string, boolean>>({});
@@ -37,7 +36,7 @@ export default function BrainDumpScreen() {
 
   const runExtraction = async () => {
     setError(null);
-    setLoading(true);
+    setExtracting(true);
     setGoals([]);
     setTasks([]);
     try {
@@ -57,7 +56,7 @@ export default function BrainDumpScreen() {
     } catch (e: any) {
       setError(e.message ?? "Extraction failed");
     } finally {
-      setLoading(false);
+      setExtracting(false);
     }
   };
 
@@ -91,24 +90,20 @@ export default function BrainDumpScreen() {
         if (insertErr) throw insertErr;
         tempToRealId[g.temp_id] = inserted.id;
 
-        // log the event — this is the one place events ARE written
-        // directly, because it's a direct user-confirmed action, not
-        // an AI inference. AI-inferred progress must go through
-        // proposed_events instead.
-        const { error: goalEventErr } = await supabase.from("events").insert({
-          user_id: user.id,
-          event_type: "goal_added",
-          entity_type: "goal",
-          entity_id: inserted.id,
+        // This is the one place events ARE written directly — it's a
+        // direct user-confirmed action, not an AI inference. AI-inferred
+        // progress must go through proposed_events instead.
+        await logEvent({
+          userId: user.id,
+          eventType: "goal_added",
+          entityType: "goal",
+          entityId: inserted.id,
           payload: { source: "brain_dump" },
         });
-        // events is the source of truth everything downstream derives from —
-        // a silent failure here leaves a goal with no history.
-        if (goalEventErr) throw goalEventErr;
       }
 
       for (const t of tasksToSave) {
-        const goalId = t.goal_ref ? tempToRealId[t.goal_ref] ?? null : null;
+        const goalId = t.goal_ref ? (tempToRealId[t.goal_ref] ?? null) : null;
         const { data: inserted, error: insertErr } = await supabase
           .from("tasks")
           .insert({
@@ -123,19 +118,19 @@ export default function BrainDumpScreen() {
           .single();
         if (insertErr) throw insertErr;
 
-        const { error: taskEventErr } = await supabase.from("events").insert({
-          user_id: user.id,
-          event_type: "task_added",
-          entity_type: "task",
-          entity_id: inserted.id,
+        await logEvent({
+          userId: user.id,
+          eventType: "task_added",
+          entityType: "task",
+          entityId: inserted.id,
           payload: { source: "brain_dump" },
         });
-        if (taskEventErr) throw taskEventErr;
       }
 
       setGoals([]);
       setTasks([]);
       setText("");
+      onSaved();
     } catch (e: any) {
       setError(e.message ?? "Save failed");
     } finally {
@@ -146,29 +141,33 @@ export default function BrainDumpScreen() {
   const hasResults = goals.length > 0 || tasks.length > 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }}>
-      <Text style={styles.heading}>Brain Dump</Text>
-      <Text style={styles.subtext}>
-        Dump everything — goals, half-formed ideas, to-dos. Don't organize it, just get it out.
-      </Text>
-
+    <View style={styles.card}>
       <TextInput
-        style={styles.textArea}
+        style={styles.input}
         multiline
-        placeholder="e.g. I want to get fit again, been slacking for months. Need to finish the tax return by end of month. Long term I want to..."
+        placeholder="Add a task, or dump what's on your mind — I'll sort it out."
         value={text}
         onChangeText={setText}
-        editable={!loading}
+        editable={!extracting}
       />
 
-      <Button title={loading ? "Thinking..." : "Structure this"} onPress={runExtraction} disabled={loading || !text.trim()} />
-      {loading && <ActivityIndicator style={{ marginTop: 12 }} />}
+      {!!text.trim() && !hasResults && (
+        <Pressable
+          style={[styles.button, extracting && styles.buttonDisabled]}
+          onPress={runExtraction}
+          disabled={extracting}
+        >
+          <Text style={styles.buttonText}>{extracting ? "Thinking..." : "Structure this"}</Text>
+        </Pressable>
+      )}
+      {extracting && <ActivityIndicator style={{ marginTop: 10 }} />}
       {error && <Text style={styles.error}>{error}</Text>}
 
       {hasResults && (
         <View style={styles.results}>
-          <Text style={styles.sectionHeading}>Goals ({goals.length})</Text>
           <Text style={styles.reviewNote}>Review before saving — nothing is written until you confirm.</Text>
+
+          {goals.length > 0 && <Text style={styles.sectionHeading}>Goals ({goals.length})</Text>}
           {goals.map((g) => (
             <View key={g.temp_id} style={styles.reviewRow}>
               <Switch
@@ -185,7 +184,7 @@ export default function BrainDumpScreen() {
             </View>
           ))}
 
-          <Text style={styles.sectionHeading}>Tasks ({tasks.length})</Text>
+          {tasks.length > 0 && <Text style={styles.sectionHeading}>Tasks ({tasks.length})</Text>}
           {tasks.map((t, i) => (
             <View key={i} style={styles.reviewRow}>
               <Switch
@@ -199,38 +198,58 @@ export default function BrainDumpScreen() {
             </View>
           ))}
 
-          <Button title={saving ? "Saving..." : "Confirm & Save"} onPress={confirmAndSave} disabled={saving} />
+          <Pressable
+            style={[styles.button, saving && styles.buttonDisabled]}
+            onPress={confirmAndSave}
+            disabled={saving}
+          >
+            <Text style={styles.buttonText}>{saving ? "Saving..." : "Confirm & Save"}</Text>
+          </Pressable>
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: "#fff" },
-  heading: { fontSize: 24, fontWeight: "700", marginTop: 20 },
-  subtext: { color: "#666", marginTop: 4, marginBottom: 16 },
-  textArea: {
+  card: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 20,
+  },
+  input: {
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 8,
-    padding: 12,
-    minHeight: 140,
+    padding: 10,
+    minHeight: 44,
+    maxHeight: 140,
     textAlignVertical: "top",
-    marginBottom: 12,
+    fontSize: 14,
   },
-  error: { color: "#c0392b", marginTop: 10 },
-  results: { marginTop: 24 },
-  sectionHeading: { fontSize: 18, fontWeight: "700", marginTop: 20, marginBottom: 4 },
-  reviewNote: { color: "#888", fontSize: 12, marginBottom: 10 },
+  button: {
+    backgroundColor: "#3060d0",
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  buttonDisabled: { opacity: 0.6 },
+  buttonText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  error: { color: "#c0392b", marginTop: 8, fontSize: 13 },
+  results: { marginTop: 14 },
+  sectionHeading: { fontSize: 15, fontWeight: "700", marginTop: 12, marginBottom: 2 },
+  reviewNote: { color: "#888", fontSize: 12, marginBottom: 6 },
   reviewRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#f2f2f2",
   },
-  itemTitle: { fontSize: 15, fontWeight: "600" },
+  itemTitle: { fontSize: 14, fontWeight: "600" },
   itemMeta: { fontSize: 12, color: "#888", marginTop: 2 },
-  itemWhy: { fontSize: 13, color: "#555", marginTop: 4, fontStyle: "italic" },
+  itemWhy: { fontSize: 12, color: "#555", marginTop: 3, fontStyle: "italic" },
 });
