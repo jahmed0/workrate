@@ -1,0 +1,19 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+npm-debug.*
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# OS
+.DS_Store
+Thumbs.db

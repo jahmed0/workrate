@@ -1,0 +1,15 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true
+  },
+  "exclude": [
+    "node_modules",
+    // Run directly by Node (which strips types), not bundled into the app.
+    // Uses explicit .ts import extensions, which this config disallows.
+    "tests",
+    // Edge Functions run on Deno, not React Native — different globals and
+    // URL imports. The Supabase CLI type-checks them with Deno at deploy time.
+    "supabase"
+  ]
+}
