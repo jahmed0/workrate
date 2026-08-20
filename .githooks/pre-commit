@@ -1,0 +1,71 @@
+#!/bin/sh
+# Blocks commits containing credentials. .gitignore is a convention; this is a
+# check. It catches the cases .gitignore misses — a key pasted into source, a
+# secret in a README example, an env file added with `git add -f`.
+#
+# Enabled by: git config core.hooksPath .githooks
+#
+# Patterns require real entropy after the prefix so documentation placeholders
+# like `sk-ant-...` in .env.example don't trip it.
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+fail=0
+report() {
+  echo "BLOCKED: $2"
+  echo "  in: $1"
+  fail=1
+}
+
+for file in $staged; do
+  [ -f "$file" ] || continue
+
+  # The hook necessarily contains the patterns it hunts for.
+  case "$file" in
+    .githooks/*) continue ;;
+  esac
+
+  case "$(basename "$file")" in
+    .env|.env.local|.env.*.local)
+      report "$file" "environment file with real values (only .env.example belongs in git)"
+      continue
+      ;;
+  esac
+
+  added=$(git diff --cached -U0 -- "$file" | grep '^+' | grep -v '^+++')
+  [ -z "$added" ] && continue
+
+  echo "$added" | grep -Eq 'sk-ant-[A-Za-z0-9_-]{20,}' \
+    && report "$file" "Anthropic API key"
+  echo "$added" | grep -Eq 'sbp_[A-Za-z0-9]{20,}' \
+    && report "$file" "Supabase personal access token"
+  echo "$added" | grep -Eq '(github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,})' \
+    && report "$file" "GitHub token"
+  # Supabase secret key (modern format). Unlike sb_publishable_, this one
+  # bypasses RLS entirely, so it must never reach a client or a repo.
+  echo "$added" | grep -Eq 'sb_secret_[A-Za-z0-9_-]{20,}' \
+    && report "$file" "Supabase secret key (bypasses RLS)"
+  # Legacy Supabase service_role keys are JWTs. The claim is base64-encoded
+  # inside, so grepping for the literal 'service_role' finds nothing — match
+  # the JWT shape instead. No JWT belongs in source; they come from env.
+  echo "$added" | grep -Eq 'eyJ[A-Za-z0-9_-]{15,}\.eyJ[A-Za-z0-9_-]{15,}\.' \
+    && report "$file" "JWT (possible Supabase service_role / anon key)"
+  echo "$added" | grep -Eq 'AKIA[0-9A-Z]{16}' \
+    && report "$file" "AWS access key id"
+  echo "$added" | grep -Eq -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+    && report "$file" "private key block"
+done
+
+if [ "$fail" -ne 0 ]; then
+  cat <<'EOF'
+
+Commit aborted. Move the value into .env (gitignored) and read it via
+process.env, or use a Supabase secret for anything server-side.
+
+If this is a false positive, re-run with:  git commit --no-verify
+EOF
+  exit 1
+fi
+
+exit 0
